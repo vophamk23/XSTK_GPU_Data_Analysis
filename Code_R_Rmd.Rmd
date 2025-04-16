@@ -1,0 +1,714 @@
+---
+title: "BTL_XSTL_KHOA MAY TINH"
+author: "Vo_Pham"
+date: "2024-11-02"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+# I. TIỀN XỬ LÝ SỐ LIỆU 
+  1. Lựa chọn tính năng:\
+  
+Bài tập này tập trung vào phân tích tốc độ bộ nhớ của GPU. Tốc độ xung nhịp bộ nhớ có tác động đáng kể đến hiệu suất của GPU, đặc biệt trong các tác vụ đòi hỏi truy cập dữ liệu lớn. Xung nhịp bộ nhớ cao hơn cho phép GPU truy cập bộ nhớ nhanh hơn, từ đó nâng cao hiệu suất tổng thể. Một số tính năng quan trọng đã được lựa chọn để đánh giá tốc độ bộ nhớ,bao gồm: "Memory_Bandwidth","Memory" ,"Memory_Speed", "L2_Cache", "Memory_Bus", "Dedicated","Shader", "Manufacturer".
+
+  2. Đọc dữ liệu:\
+  
+Bắt đầu bằng cách xem qua toàn bộ thông tin trong tập dữ liệu để nắm bắt tổng quan. Sau đó, hiển thị bản xem trước của một vài dòng đầu tiên để có cái nhìn sơ bộ về cấu trúc và cách trình bày dữ liệu. Bước này giúp làm quen với tập dữ liệu và hiểu rõ cấu trúc trước khi đi sâu vào phân tích chi tiết.\
+Đọc tệp tin All_GPUs, in kết quả 10 dòng đầu tiên của dữ liệu như hình 1:
+```{r}
+# Đọc dữ liệu từ file CSV có tên "All_GPUs.csv"
+All_GPUs <- read.csv("~/archive/All_GPUs.csv")
+# Hiển thị 10 dòng đầu tiên của dữ liệu đã đọc
+head(All_GPUs, 10)
+```
+  3. Kiểm tra dữ liệu khuyết trong tập tin.\
+
+Tìm các hàng trống (tức là các hàng mà toàn bộ giá trị là rỗng hoặc " ") trong dữ liệu và chuyển đổi chúng thành giá trị NA.
+```{r}
+# Thay thế tất cả các ô trống trong dữ liệu GPU_data bằng NA
+All_GPUs[All_GPUs == ""] <- NA
+```
+Tìm các giá trị trong dataframe có định dạng là dấu gạch ngang (các giá trị bắt đầu bằng ký tự xuống dòng và theo sau là dấu `-`) và thay thế chúng bằng giá trị NA. Sử dụng lệnh `gsub()` để thay thế tất cả các dấu `-` trong dataframe thành NA để đảm bảo việc xử lý dữ liệu được nhất quán.\
+```{r}
+# Thay thế các giá trị có định dạng "\n-" bằng NA trong tất cả các cột của GPU_data
+All_GPUs[] <- lapply(All_GPUs, function(x) gsub("^\\n- $", NA, x))
+
+# Thay thế các chuỗi "NA" bằng NA
+All_GPUs[All_GPUs == "NA"] <- NA
+```
+Nếu hàm `gsub()` không thể trực tiếp chuyển các giá trị thành NA vì NA không phải là một chuỗi ký tự, thì có thể thay thế các giá trị này thành chuỗi `"NA"` trước. Sau đó, nếu cần, chuyển đổi các chuỗi `"NA"` trong dataframe thành giá trị NA thực sự để đảm bảo dữ liệu được chuẩn hóa đúng cách. Kết quả được hiển thị trong hình 2.\
+```{r}
+# Hiển thị 6 dòng đầu tiên của dữ liệu đã được kiểm tra và thay thế bằng NA 
+head(All_GPUs)
+```
+Tiếp theo ta thực hiện thống kê số lượng và tỷ lệ dữ liệu khuyết ở các biến:
+
+```{r}
+# Tạo bảng thống kê số lượng và tỷ lệ dữ liệu khuyết
+find_NA <- data.frame(
+  Column = names(All_GPUs),
+  SoLuong_NA = sapply(All_GPUs, function(x) sum(is.na(x))),
+  NA_Percentage = sapply(All_GPUs, function(x) mean(is.na(x)) * 100)
+)
+# Hiển thị bảng thống kê
+
+ #Gọi thư viện questionr để có thể sử dụng hàm freqq.na  
+library(questionr)
+#Thống kê số lượng và tỷ lệ dữ liệu khuyết bằng hàm freq.na 
+freq.na(All_GPUs) 
+
+```
+Dữ liệu khuyết trong bảng cho thấy một số biến có tỷ lệ khuyết rất cao, đặc biệt là Release_Price (84%), DisplayPort_Connection (75%), và Boost_Clock (58%). Những biến này cần xử lý đặc biệt nếu đóng vai trò quan trọng trong phân tích. Các biến như PSU (34%), Core_Speed (27%), và các kết nối (HDMI, VGA, DVI) thiếu từ 20-35%, ảnh hưởng đến khả năng phân tích tính năng kỹ thuật. Một số biến có tỷ lệ khuyết dưới 20% (Best_Resolution, Max_Power, Pixel_Rate, Texture_Rate) và dưới 10% (Memory, Shader) có thể dễ dàng được điền dữ liệu. Đặc biệt, một số biến quan trọng như L2_Cache, Manufacturer, Name và Release_Date không bị khuyết, giúp đảm bảo độ tin cậy cho các phân tích chính yếu. Xử lý hiệu quả dữ liệu khuyết sẽ cải thiện chất lượng của các kết luận từ bộ dữ liệu này.
+
+
+
+Dựa trên kết quả thu được, có thể nhận thấy rằng khá nhiều biến chứa dữ liệu khuyết. Vì vậy, để trực quan hóa tỷ lệ này, ta cần sử dụng hàm từ thư viện `ggplot2` để vẽ biểu đồ thể hiện tỷ lệ dữ liệu khuyết cho từng biến. Việc này giúp dễ dàng nhận diện và đánh giá mức độ khuyết của dữ liệu trong từng cột, hỗ trợ các quyết định xử lý dữ liệu hiệu quả hơn.\
+
+```{r}
+# Gọi thư viện ggplot2 để sử dụng hàm ggplot
+library(ggplot2)
+
+# Tạo biểu đồ cột cho tỷ lệ dữ liệu khuyết ở các biến
+ggplot(find_NA, aes(x = Column, y = NA_Percentage, fill = NA_Percentage)) +
+  geom_bar(stat = "identity") +
+   scale_fill_gradient(low = "lightblue", high = "darkblue", ) + # Đổi màu gradient
+  geom_text(aes(label = paste0(round(NA_Percentage, 1), "%")), 
+            vjust = -0.5, size = 1.5 ) +
+  labs(title = "Tỷ lệ dữ liệu khuyết ở các biến",
+       x = "Biến Dữ Liệu ",
+       y = "Tỷ lệ dữ liệu khuyết (%)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 10, angle = 90, hjust = 1))  
+```
+
+Tiếp theo, chúng ta sẽ tiến hành loại bỏ những biến có tỷ lệ dữ liệu khuyết cao, cụ thể là những biến có tỷ lệ dữ liệu khuyết từ 15% trở lên. Chúng ta chỉ giữ lại những biến có tỷ lệ dữ liệu khuyết thấp hơn 15%.Và đồng thời, đối với các biến này, chúng ta cũng sẽ loại bỏ tất cả các quan sát mà chứa dữ liệu khuyết để đảm bảo rằng dữ liệu phân tích của chúng ta là chính xác và đáng tin cậy.
+quả của quá trình làm sạch dữ liệu này sẽ được trình bày trong Hình.
+```{r} 
+# Lọc các cột có tỷ lệ dữ liệu khuyết dưới 15%
+selected_columns <- find_NA$Column[find_NA$NA_Percentage < 15 ]
+
+# Giữ lại các cột thỏa mãn điều kiện trong dataframe ban đầu
+new_GPU_data <- All_GPUs[, selected_columns]
+```
+Quy trình làm sạch dữ liệu sẽ giữ lại các giá trị NA trừ khi việc loại bỏ chúng là thực sự cần thiết. Trong một số trường hợp, các giá trị NA có thể chứa thông tin quan trọng mà không nên xóa bỏ tùy tiện; vì vậy, chúng không luôn được xem là dữ liệu không hợp lệ. Dựa vào bối cảnh nghiên cứu, khi chúng ta tập trung vào các mẫu dữ liệu cụ thể, chiến lược xử lý giá trị NA sẽ được điều chỉnh linh hoạt để đảm bảo không bỏ sót bất kỳ thông tin nào có giá trị.
+
+Như ta đã thấy, do tỷ lệ NA trong các biến này là khâ thấp, và bộ dữ liệu All_GPUs tương đối lớn nên việc loại bỏ các hàng chứa giá trị NA sẽ không gây tác động lớn đến tính đại diện của dữ liệu. Ngay cả khi loại bỏ một số lượng đáng kể các quan sát, tập dữ liệu còn lại vẫn đủ lớn để cung cấp kết quả đáng tin cậy và hỗ trợ cho các phân tích chuyên sâu. Kết 
+```{r}
+#Xoá các quan sát chứa dữ liệu khuyết
+new_GPU_data<-na.omit(new_GPU_data)
+
+# Hiển thị 10 dòng đầu tiên của dữ liệu sau khi đã những biến có tỷ lệ khuyết cao 
+head(new_GPU_data, 10)
+
+```
+  4. Làm sạch các biến và xử lý định dạng các biến:\
+
+Nhận thấy rằng tất cả dữ liệu trong một tính năng đều sử dụng cùng một đơn vị đo. Để thuận lợi hơn cho việc quan sát và phân tích, chúng tôi đã quyết định loại bỏ tất cả các đơn vị khỏi các tính năng như “L2_Cache”,“Memory_Bandwidth”,“Memory_Bus”,“Memory_Speed”,"Memory" và "Process". Việc này không chỉ giúp tăng tính đồng nhất trong phân tích mà còn đơn giản hóa việc so sánh và diễn giải dữ liệu trên các tính năng này. 
+
+```{r}
+# Lựa chọn các biến cần xoá đơn vị
+  columns_to_clean <- c("L2_Cache","Memory_Bandwidth","Memory_Bus","Memory_Speed", "Memory", "Process" )
+
+#Tạo hàm thực hiện xoá đơn vị ở các biến 
+  remove_units <- function(column) {
+# Sử dụng gsub để xóa tất cả các ký tự không phải số (kể cả đơn vị)
+  cleaned_column <- gsub("[^0-9.]", "", column)
+# Chuyển đổi kết quả về kiểu numeric
+  cleaned_column <- as.numeric(cleaned_column)
+  
+  return(cleaned_column)
+  }
+  
+# Áp dụng hàm cho các biến đã chọn
+new_GPU_data[columns_to_clean] <- lapply(new_GPU_data[columns_to_clean], remove_units)
+```
+In 6 dòng đầu tiên của new_GPU_data sau khi làm sạch và kiểm tra số biến và số quan sát còn lại.
+```{r}
+head(new_GPU_data, 10)
+```
+
+Để đảm bảo rằng quá trình làm sạch dữ liệu đã hoàn tất, chúng tôi tiến hành kiểm tra số lượng giá trị bị thiếu. Kết quả cho thấy, không có dữ liệu nào bị khuyết trong tập dữ liệu cuối cùng Hình 3. Điều này khẳng định quá trình làm sạch đã thành công, giúp chúng tôi sở hữu một bộ dữ liệu hoàn chỉnh và sẵn sàng cho các bước phân tích tiếp theo.
+```{r}
+apply(is.na(new_GPU_data), 2, sum)
+```
+
+
+```{r}
+dim(new_GPU_data)
+```
+Sau khi tiến hành làm sạch bộ dữ liệu, chúng ta đã thu được 19 biến cùng với 2637 quan sát có giá trị. Giai đoạn tiếp theo của là xác định và lựa chọn các biến quan trọng, trong đó Memory_Bandwidth nổi bật như một yếu tố thiết yếu trong việc đánh giá hiệu suất của các GPU.
+
+Để phân tích các yếu tố ảnh hưởng đến Memory_Bandwidth, mô hình hồi quy được lựa chọn là phương pháp đơn giản nhưng hiệu quả. Trong mô hình này, chúng ta xem Memory_Bandwidth là biến phụ thuộc, trong khi các biến độc lập đã qua xử lý bao gồm: Memory_Speed, L2_Cache, Architecture, Dedicated, Memory_Bus, Shader, Direct_X, và Resolution_WxH.
+
+Tuy nhiên, các biến Architecture, Direct_X, và Resolution_WxH là những biến dạng chuỗi có nhiều giá trị khác nhau, làm tăng độ phức tạp cho mô hình hồi quy. Do đó, để tối ưu hóa phân tích, chúng ta sẽ giữ lại các biến độc lập như Memory, Memory_Speed, L2_Cache, Memory_Bus, Shader và Dedicated. Ngoài ra, biến Manufacturer cũng sẽ được đưa vào phân tích, nhằm so sánh hiệu suất Memory_Bandwidth giữa các GPU đến từ các nhà sản xuất khác nhau.
+
+Để hiểu rõ hơn về tác động của các yếu tố này đối với Memory_Bandwidth trong GPU, bạn có thể tham khảo một số tài liệu hữu ích sau:\
+- https://www.digitalocean.com/community/tutorials/gpu-memory-bandwidth \
+- https://blog.paperspace.com/understanding-memory-bandwidth-benchmarks/
+  
+  
+  5. Tạo bộ dữ liệu bao gồm các biến chính để phân tích:\
+
+Như vậy, chúng ta đã hoàn tất quá trình làm sạch dữ liệu và hiện có trong tay một bộ dữ liệu đầy đủ, sẵn sàng cho các bước phân tích tiếp theo.
+```{r}
+main_GPU_data<-new_GPU_data[c("Memory_Bandwidth", "Memory", "Memory_Speed","L2_Cache","Memory_Bus","Dedicated",  "Shader","Manufacturer")]
+head(main_GPU_data, 10)
+```
+
+# II. THỐNG KÊ MÔ TẢ 
+  1. Phân tích dữ liệu:\
+  
+Trước khi tiến hành phân tích dữ liệu, cần phân biệt rõ giữa biến định lượng và biến phân loại. Biến định lượng là những biến có giá trị số học, cho phép thực hiện các phép toán và phân tích thống kê, bao gồm cả biến liên tục (như chiều cao, nhiệt độ) và biến rời rạc (như số lượng sản phẩm). Trong khi đó, biến phân loại dùng để biểu thị các nhóm hoặc đặc điểm, chẳng hạn như giới tính, màu sắc, hoặc loại sản phẩm. Các biến này thường được biểu diễn bằng nhãn và không phù hợp cho các phép tính số học. Việc phân loại chính xác các biến này giúp lựa chọn phương pháp phân tích phù hợp, từ đó nâng cao độ chính xác và giá trị của kết quả phân tích.\
+
+Đối với các biến định lượng, bao gồm cả biến liên tục và rời rạc, chúng ta tiến hành tính các thống kê mô tả như trung bình, độ lệch chuẩn mẫu, các phân vị, trung vị, giá trị lớn nhất và giá trị nhỏ nhất. Những thống kê này giúp chúng ta có cái nhìn toàn diện hơn về sự phân bố và đặc điểm của dữ liệu.
+
+```{r}
+# Xác định các biến số và tạo một khung dữ liệu chỉ chứa các biến số
+new_numeric_vars <- sapply(main_GPU_data, is.numeric)
+numeric_data <- main_GPU_data[, new_numeric_vars]
+
+# Tính toán các thống kê mô tả cho các biến số
+summary_stats <- sapply(numeric_data, function(x) {
+  c(
+    Mean = mean(x),                   # Trung bình
+    SD = sd(x),                       # Độ lệch chuẩn
+    Min = min(x),                     # Giá trị nhỏ nhất
+    Q1 = quantile(x, 0.25),           # Phân vị 25%
+    Median = median(x),               # Trung vị
+    Q3 = quantile(x, 0.75),           # Phân vị 75%
+    Max = max(x)                      # Giá trị lớn nhất
+  )
+})
+
+# Chuyển thống kê mô tả thành dataframe và xuất ra dưới dạng bảng
+t(as.data.frame(summary_stats))
+```
+
+Trong tập dữ liệu này, có 3 biến có kiểu dữ liệu phân loại: "Dedicated", "Shader", và "Manufacturer". Để thuận tiện cho quá trình phân tích, chúng ta cần mã hóa các biến này. Chúng tôi sử dụng hàm factor() để chuyển các cột dữ liệu thành dạng nhân tố. Sau khi đã chuyển đổi các cột Dedicated, Shader, và Manufacturer sang kiểu số, bạn có thể sử dụng hàm summary() để đếm số lượng các giá trị trong các biến này.
+
+```{r}
+# Chuyển đổi Biến 'Dedicated' sang dạng factor 
+main_GPU_data$Dedicated <- as.factor(main_GPU_data$Dedicated)
+
+# Chuyển đổi biến 'Shader' sang dạng factor 
+main_GPU_data$Shader <- as.factor(main_GPU_data$Shader)
+
+# Chuyển đổi biến 'Manufacturer' sang dạng factor 
+main_GPU_data$Manufacturer <-as.factor(main_GPU_data$Manufacturer)
+```
+```{r}
+# Thống kê số lượng biến Dedicated
+summary(main_GPU_data$Dedicated)
+
+# Thống kê số lượng biến Shader
+summary(main_GPU_data$Shader)
+
+# Thống kê số lượng biến Manufacturer
+summary(main_GPU_data$Manufacturer)
+```
+
+Dưới đây là bảng thống kê mô tả của tập dữ liệu `main_GPU_data`, giúp chúng ta nắm bắt các thông tin cơ bản về các biến định lượng và phân loại, từ đó hiểu rõ hơn về cấu trúc và đặc điểm của dữ liệu.
+```{r}
+summary(main_GPU_data)
+```
+  2. Vẽ đồ thị chỉ Tần Suất (Histogram) cho biến Memory_Bandwidth bằng đồ thị ggplot:
+```{r}
+  # Vẽ histogram cho biến Memory_Bandwidth
+ggplot(main_GPU_data, aes(x = Memory_Bandwidth)) +
+  geom_histogram(fill = "orchid", color = "black",alpha = 0.7) +  # Thay đổi binwidth theo yêu cầu
+  labs(title = "Phân Phối Memory Bandwidth",
+       x = "Memory Bandwidth (GB/s)",  # Ghi chú đơn vị nếu cần
+       y = "Số Lượng") +
+  theme_minimal()
+```
+
+Dựa vào đồ thị, có thể thấy rõ một số đặc điểm nổi bật trong phân phối của Memory Bandwidth (Y). Trước hết, đồ thị này cho thấy phân phối lệch trái rõ rệt, với phần lớn dữ liệu tập trung ở mức băng thông thấp, từ 0 đến 200 GB/s. Khi băng thông tăng lên, tần suất các điểm dữ liệu giảm dần, và chỉ còn lại một số ít dữ liệu ở mức băng thông cao trên 500 GB/s. Đáng chú ý, phân phối này có một đuôi dài kéo về bên phải, phản ánh mức độ lệch dương rõ ràng. Xét về mức độ biến thiên, tần suất cao nhất tập trung ở băng thông thấp, với cột đầu tiên trong đồ thị vượt quá 600, sau đó các cột tiếp theo giảm mạnh khi băng thông vượt qua 200 GB/s. Gần như không có dữ liệu khi băng thông chạm ngưỡng 1000 GB/s. Sự chênh lệch lớn về tần suất giữa các mức băng thông thấp và cao cho thấy phân phối này không đồng đều và biến thiên rất mạnh.\
+
+Từ những đặc điểm trên, có thể khẳng định rằng Y không tuân theo phân phối chuẩn. Một phân phối chuẩn thông thường có hình dạng đối xứng, với phần lớn dữ liệu tập trung quanh giá trị trung bình và giảm đều về hai phía. Trong trường hợp này, sự tập trung dữ liệu ở băng thông thấp cùng với đuôi dài về bên phải đã tạo nên độ lệch đáng kể, điều này có thể ảnh hưởng đến các phân tích đòi hỏi tính chuẩn của dữ liệu, chẳng hạn như hồi quy tuyến tính thông thường.\
+
+* Chuẩn Hóa Cho Biến Memory Bandwidth (Y) và các biến ảnh hướng đến Y như “Memory_Speed”,“L2_Cache”,“Memory_Bus”,“Memory”:\
+
+Để chuẩn hóa dữ liệu trong trường hợp này, chúng ta sẽ áp dụng phép biến đổi logarit cho biến Memory Bandwidth (Y) và các biến “Memory_Speed”,“L2_Cache”,“Memory_Bus”,“Memory” . Việc này nhằm làm giảm ảnh hưởng của các giá trị cực lớn và giúp phân phối trở nên gần với phân phối chuẩn hơn, từ đó cải thiện hiệu quả của các mô hình phân tích dựa trên giả định tính chuẩn (như hồi quy tuyến tính).
+
+
+Phép chuẩn hóa logarit cho biến 𝑌có thể được biểu diễn như sau:
+
+         ln(Y) = b0 + b1*ln(X1) + b2*ln(X2) + ⋯ + ϵ
+Trong đó:\
+- ln⁡(𝑌):           là giá trị chuẩn hóa của Y bằng phép biến đổi logarit tự nhiên.\
+- 𝑏0,𝑏1,𝑏2,…:    là các tham số hồi quy cần ước lượng.\
+- 𝑋1,𝑋2,…:        là các biến độc lập (các yếu tố ảnh hưởng đến 𝑌).\
+- ϵ:                là sai số ngẫu nhiên trong mô hình.\
+
+```{r}
+# Chuân hóa Biến Memory_Bandwidth(Y) và các biến ảnh hướng đến Y như “Memory_Speed”,“L2_Cache”,“Memory_Bus”,“Memory”:
+main_GPU_data$Memory_Bandwidth <- log(main_GPU_data$Memory_Bandwidth)
+main_GPU_data$Memory_Speed <- log(main_GPU_data$Memory_Speed + 1 )
+main_GPU_data$L2_Cache <- log(main_GPU_data$L2_Cache + 1 )
+main_GPU_data$Memory_Bus <- log(main_GPU_data$Memory_Bus + 1 )
+main_GPU_data$Memory <- log(main_GPU_data$Memory +1 )
+
+
+# Vẽ histogram cho biến Memory_Bandwidth sau khi đã Chuẩn hóa 
+ggplot(main_GPU_data, aes(x = Memory_Bandwidth)) +
+  geom_histogram(fill = "orchid", color = "black",alpha = 0.7) +  # Thay đổi binwidth theo yêu cầu
+  labs(title = "Phân Phối Memory Bandwidth Đã Chuẩn Hóa ",
+       x = "Memory Bandwidth (GB/s)",  # Ghi chú đơn vị nếu cần
+       y = "Số Lượng") +
+  theme_minimal()
+```
+
+Sau khi chuẩn hóa, phân phối Memory Bandwidth (Y) đã trở nên cân đối hơn và gần với phân phối chuẩn. Phần đuôi dài về phía bên phải đã thu gọn, giảm ảnh hưởng của các giá trị ngoại lai. Phân phối mới giúp thỏa mãn giả định về tính chuẩn của phần dư, phù hợp hơn cho các mô hình hồi quy tuyến tính và cải thiện khả năng phân tích dữ liệu.
+
+  3. Vẽ đồ thị Phân Tán (Scatter plot) cho biến Memory_Bandwidth theo các biến Định Lượng:\
+  a. Scatter plot cho biến Memory_Bandwidth theo biến Memory_Speed:
+```{r}
+  # Vẽ scatter plot cho Memory_Bandwidth theo Memory_Speed
+ggplot(main_GPU_data, aes(x = Memory_Speed, y = Memory_Bandwidth)) +
+  geom_point(color = "forestgreen", alpha = 0.7) +  # Thay đổi màu sắc và độ trong suốt của điểm
+  labs(title = "Scatter Plot của Memory Bandwidth theo Memory Speed",
+       x = "Memory Speed (MHz)",
+       y = "Memory Bandwidth (GB/s)") +
+  theme_minimal()
+```
+
+Sau khi chuẩn hóa biến Y (Memory Bandwidth), biểu đồ phân tán cho thấy mối quan hệ tuyến tính dương giữa Memory Speed (MHz) và Memory Bandwidth (GB/s). Cụ thể, khi tốc độ bộ nhớ tăng, băng thông bộ nhớ cũng có xu hướng tăng, ngụ ý rằng tốc độ bộ nhớ cao thường đi kèm với băng thông lớn hơn. Tuy nhiên, các điểm dữ liệu không hoàn toàn nằm trên một đường thẳng mà có sự phân tán nhất định, cho thấy có thể tồn tại các yếu tố khác ngoài Memory Speed ảnh hưởng đến Memory Bandwidth. Dù vậy, độ dốc của mối quan hệ này tương đối ổn định, cho thấy rằng Memory Speed và Memory Bandwidth có mối quan hệ khá nhất quán. Để đánh giá chính xác hơn về mức độ tương quan, cần áp dụng thêm các phương pháp phân tích thống kê.
+
+Việc chuẩn hóa Memory Bandwidth giúp dữ liệu trở nên nhất quán và dễ so sánh hơn, đặc biệt là trong trường hợp có sự phân tán và ngoại lệ. Nhờ đó, biểu đồ sau chuẩn hóa sẽ làm nổi bật xu hướng chính mà không bị ảnh hưởng bởi các giá trị cực đoan, giúp ta thấy rõ hơn mối quan hệ tuyến tính giữa Memory Speed và Memory Bandwidth, từ đó hỗ trợ cho việc đánh giá và phân tích chính xác hơn.
+
+  b. Scatter plot cho biến Memory_Bandwidth theo biến L2_Cache:
+```{r}
+# Vẽ scatter plot cho Memory_Bandwidth theo L2_Cache
+ggplot(main_GPU_data, aes(x = L2_Cache, y = Memory_Bandwidth)) +
+  geom_point(color = "forestgreen", alpha = 0.7) +  # Thay đổi màu sắc và độ trong suốt của điểm
+  labs(title = "Scatter Plot của Memory Bandwidth theo L2 Cache",
+       x = "L2 Cache (KB)",
+       y = "Memory Bandwidth (GB/s)") +
+  theme_minimal()
+```
+
+Biểu đồ cho thấy xu hướng Memory Bandwidth tăng dần khi kích thước L2 Cache tăng, phản ánh mối quan hệ tuyến tính dương giữa hai biến này. Điều này cho thấy rằng, khi dung lượng L2 Cache lớn hơn, hệ thống có xu hướng đạt được băng thông bộ nhớ cao hơn. Tuy nhiên, dữ liệu khá phân tán quanh xu hướng này, cho thấy không phải lúc nào L2 Cache lớn hơn cũng dẫn đến Memory Bandwidth cao hơn. Một số điểm ngoại lệ xuất hiện ở mức L2 Cache gần 0 KB nhưng vẫn có Memory Bandwidth rất cao, có thể do yếu tố kiến trúc hệ thống hoặc thiết kế phần cứng khác biệt. Phần lớn các điểm dữ liệu tập trung ở phạm vi Memory Bandwidth từ 4 đến 6 GB/s, đặc biệt khi L2 Cache đạt từ 5 KB trở lên, cho thấy mức độ ổn định hơn của băng thông bộ nhớ ở các giá trị L2 Cache cao.
+
+Việc chuẩn hóa biến Memory Bandwidth (biến Y) sẽ mang lại lợi thế trong việc phân tích, đặc biệt khi dữ liệu có sự phân tán lớn và các điểm ngoại lệ. Sau khi chuẩn hóa, biểu đồ sẽ thể hiện dữ liệu một cách đồng nhất hơn, giúp dễ dàng so sánh giữa các mức L2 Cache và giảm ảnh hưởng của các giá trị cực đoan. Điều này giúp xác định rõ hơn xu hướng tổng quát giữa L2 Cache và Memory Bandwidth, làm nổi bật mối quan hệ chính giữa hai biến và hỗ trợ cho việc đánh giá chính xác hơn.
+
+  c. Scatter plot cho biến Memory_Bandwidth theo biến Memory_Bus:
+```{r}
+# Vẽ scatter plot cho Memory_Bandwidth theo Memory_Bus
+ggplot(main_GPU_data, aes(x = Memory_Bus, y = Memory_Bandwidth)) +
+  geom_point(color = "forestgreen", alpha = 0.7) +  # Thay đổi màu sắc và độ trong suốt của điểm
+  labs(title = "Scatter Plot của Memory Bandwidth theo Memory Bus",
+       x = "Memory Bus (bits)",
+       y = "Memory Bandwidth (GB/s)") +
+  theme_minimal()
+```
+
+Dựa vào đồ thị phân tán trên, ta thấy rằng khi Memory Bus (bits) tăng lên, Memory Bandwidth (GB/s) cũng có xu hướng tăng. Thể hiện giữa biến Memory Bus và Memory  Bandwidth có mối quan hệ tuyến tính dương. Ngụ ý rằng dung lượng bus bộ nhớ lớn hơn thường đi kèm với băng thông bộ nhớ cao hơn. Tuy nhiên, sự phân tán dữ liệu khá lớn, đặc biệt ở các mức Memory Bus thấp (từ 4 đến 6 bits), gợi ý rằng có thể có những yếu tố khác ngoài Memory Bus ảnh hưởng đến băng thông bộ nhớ, chẳng hạn như kiến trúc bộ nhớ hoặc các thông số phần cứng khác.
+
+Việc chuẩn hóa biến Y (Memory Bandwidth) giúp dữ liệu trở nên đồng nhất hơn, giảm bớt ảnh hưởng của các giá trị ngoại lệ và làm rõ ràng hơn mối quan hệ giữa Memory Bus và băng thông bộ nhớ. Chuẩn hóa này không chỉ tạo điều kiện thuận lợi cho việc phân tích mà còn giúp dễ dàng nhận diện xu hướng chung hơn. Nhờ đó, các kết quả phân tích sẽ chính xác và có độ tin cậy cao hơn trong việc đánh giá mối liên hệ giữa hai biến.
+
+  d. Scatter plot cho biến Memory_Bandwidth theo biến Memory:
+      
+```{r}
+# Vẽ scatter plot cho Memory_Bandwidth theo Memory 
+ggplot(main_GPU_data, aes(x = Memory, y = Memory_Bandwidth)) +
+  geom_point(color = "forestgreen", alpha = 0.7) +  # Thay đổi màu sắc và độ trong suốt của điểm
+  labs(title = "Scatter Plot của Memory Bandwidth theo Memory ",
+       x = "Memory  (MB)",
+       y = "Memory Bandwidth (GB/s)") +
+  theme_minimal()
+```
+
+Dựa vào đồ thị phân tán, ta có thể rút ra một số nhận xét rằng mối quan hệ giữa "Memory Bandwidth" (Băng thông bộ nhớ) và "Memory" (Bộ nhớ) thể hiện xu hướng tăng dần, nghĩa là khi bộ nhớ tăng, băng thông bộ nhớ cũng có xu hướng tăng. Tuy nhiên, dữ liệu phân tán cho thấy sự phân bố không đồng nhất, có một số điểm tập trung dày đặc ở những mức bộ nhớ nhất định, đặc biệt là trong khoảng từ 7 MB đến 9 MB. Điều này có thể gợi ý rằng, trong một số dải bộ nhớ nhất định, băng thông có sự biến động lớn hơn.
+
+Sau khi chuẩn hóa trục Y (băng thông bộ nhớ), dữ liệu có thể trở nên dễ dàng so sánh hơn giữa các mức bộ nhớ khác nhau. Việc chuẩn hóa giúp làm nổi bật sự khác biệt về hiệu suất và giúp xác định xu hướng chung một cách rõ ràng hơn. Điều này có thể có lợi trong việc đánh giá hiệu quả sử dụng bộ nhớ khi áp dụng vào các phân tích sâu hơn, đặc biệt là để nhận diện các điểm bất thường hoặc tìm ra các yếu tố tác động đến sự thay đổi của băng thông.
+     
+  4. Vẽ đồ thị Hình Hộp (Box plot) cho biến Memory_Bandwidth theo các biến Phân Loại:\
+    a. Đồ thị Boxplot cho biến Memory_Bandwidth theo biến Dedicated:
+```{r}
+# Vẽ boxplot cho Memory_Bandwidth theo Dedicated
+ggplot(main_GPU_data, aes(x = Dedicated, y = Memory_Bandwidth)) +
+  geom_boxplot(fill = "darkslategray", color = "black", alpha = 0.7) +  # Thay đổi màu sắc và độ trong suốt của hộp
+  labs(title = "Boxplot của Memory Bandwidth theo Dedicated GPU",
+       x = "Dedicated GPU",
+       y = "Memory Bandwidth (GB/s)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))  # Điều chỉnh vị trí nhãn trục x
+```
+
+Dựa vào đồ thị boxplot, có thể thấy rằng nhóm có GPU chuyên dụng ("Yes") có băng thông bộ nhớ cao hơn đáng kể so với nhóm không có GPU chuyên dụng ("No"). Điều này được thể hiện qua giá trị trung vị và khoảng tứ phân vị của nhóm "Yes" lớn hơn. Bên cạnh đó, dải giá trị của nhóm "Yes" cũng rộng hơn, cho thấy sự phân bố dữ liệu không đồng nhất và sự đa dạng cao hơn về băng thông.
+
+Ngoài ra, nhóm "Yes" có nhiều điểm ngoại lệ (outliers) nằm dưới đáy hộp, cho thấy một số trường hợp có băng thông thấp hơn mức trung bình. Trong khi đó, nhóm "No" có hộp dữ liệu hẹp hơn và ít điểm ngoại lệ, phản ánh sự đồng nhất cao hơn về băng thông bộ nhớ. Điều này cho thấy rằng mặc dù GPU chuyên dụng thường đem lại băng thông bộ nhớ cao hơn, nhưng đi kèm với sự biến động lớn hơn về hiệu suất.\
+
+  b. Đồ thị Boxplot cho biến Memory_Bandwidth theo biến Shader:
+```{r}
+# Vẽ boxplot cho Memory_Bandwidth theo Shader
+ggplot(main_GPU_data, aes(x = Shader, y = Memory_Bandwidth)) +
+  geom_boxplot(fill = "darkslategray", alpha = 0.7) +  # Thay đổi màu sắc và độ trong suốt
+  labs(title = "Boxplot của Memory Bandwidth theo Shader",
+       x = "Shader",
+       y = "Memory Bandwidth (GB/s)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Xoay nhãn trục x
+```
+
+Dựa trên biểu đồ boxplot, ta thấy rằng mỗi loại shader có mức ảnh hưởng khác nhau đến băng thông bộ nhớ, với xu hướng băng thông tăng dần khi chuyển từ shader thấp lên shader cao.
+
+- Shader 2 có mức băng thông bộ nhớ thấp nhất và biến động rất ít, thể hiện qua hộp và whiskers ngắn. Điều này gợi ý rằng Shader 2 thường được dùng trong các hệ thống có cấu hình đơn giản, không yêu cầu hiệu năng cao về bộ nhớ. Các cấu hình trong nhóm này có tính đồng nhất cao, phù hợp với các tác vụ nhẹ.
+
+- Shader 3 và Shader 4 có băng thông bộ nhớ cao hơn và phân tán rộng hơn so với Shader 2, cho thấy các cấu hình phần cứng đa dạng hơn. Trung vị của hai nhóm shader này đều nằm ở khoảng 4 GB/s, biểu thị mức băng thông tầm trung. Điều này cho thấy rằng Shader 3 và Shader 4 phù hợp cho các cấu hình phần cứng phục vụ tác vụ đòi hỏi nhiều tài nguyên hơn so với Shader 2, nhưng vẫn chưa đạt đến mức cao cấp.
+
+- Shader 5 nổi bật với băng thông bộ nhớ cao nhất, cùng với nhiều giá trị ngoại lệ (outliers) ở phía trên. Các giá trị ngoại lệ cho thấy rằng trong nhóm Shader 5 có một số cấu hình phần cứng có băng thông bộ nhớ rất cao, có lẽ được tối ưu hóa đặc biệt cho các tác vụ tính toán phức tạp hoặc xử lý đồ họa. Sự biến động mạnh mẽ ở nhóm này phản ánh sự đa dạng lớn giữa các cấu hình cao cấp.
+
+Nhìn chung, mỗi loại shader có liên quan đến một mức băng thông bộ nhớ khác nhau, cho thấy sự tương thích giữa loại shader và cấu hình phần cứng. Shader cao hơn yêu cầu phần cứng mạnh mẽ hơn với băng thông bộ nhớ lớn hơn, từ đó giúp xác định cấu hình tối ưu cho từng loại shader và tác vụ đặc thù.\
+   
+  c. Đồ thị Boxplot cho biến Memory_Bandwidth theo biến Manufacturer:
+```{r}
+ # Vẽ boxplot cho Memory_Bandwidth theo Manufacturer
+ggplot(main_GPU_data, aes(x = Manufacturer, y = Memory_Bandwidth)) +
+  geom_boxplot(fill = "darkslategray", color = "black", alpha = 0.7) +  # Thay đổi màu sắc và độ trong suốt của hộp
+  labs(title = "Boxplot của Memory Bandwidth theo Nhà sản xuất (Manufacturer)",
+       x = "Nhà sản xuất (Manufacturer)",
+       y = "Memory Bandwidth (GB/s)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Xoay nhãn trục x để dễ đọc hơn     
+``` 
+
+Dựa vào biểu đồ boxplot, chúng ta có các nhận xét về "Memory Bandwidth" của từng nhà sản xuất như sau:
+
+- AMD: Các sản phẩm của AMD có băng thông bộ nhớ khá đa dạng với trung vị vào khoảng 4.5 GB/s. Phân bố băng thông trải rộng, từ trung bình đến thấp, và có nhiều giá trị ngoại lệ thấp hơn mức này. Điều này cho thấy rằng băng thông của các sản phẩm AMD không đồng đều và thường phù hợp với các tác vụ yêu cầu hiệu năng bộ nhớ từ trung bình đến thấp.
+
+- ATI: Băng thông của ATI có trung vị nằm ở mức cao, khoảng 5.5 GB/s. Phân bố dữ liệu hẹp và ít biến động, chỉ có một vài ngoại lệ ở cả hai đầu (thấp và cao). Điều này cho thấy băng thông của các sản phẩm ATI rất ổn định và phần lớn tập trung ở mức cao, phù hợp cho các ứng dụng cần hiệu năng bộ nhớ cao.
+
+- Intel: Băng thông của các sản phẩm Intel thấp hơn hẳn so với các nhà sản xuất khác, với trung vị dưới 2 GB/s. Phân bố băng thông cũng khá hẹp, cho thấy các sản phẩm của Intel có băng thông bộ nhớ đồng nhất và thường ở mức thấp. Điều này phù hợp với các hệ thống không yêu cầu băng thông bộ nhớ cao, như các ứng dụng thông thường hoặc tiết kiệm năng lượng.
+
+- Nvidia: Các sản phẩm của Nvidia có băng thông đa dạng với trung vị khoảng 4.5 GB/s, tương đương với AMD. Phân bố của Nvidia cũng có nhiều giá trị ngoại lệ thấp, điều này cho thấy một số sản phẩm có băng thông dưới mức trung bình. Tuy nhiên, vẫn có một số sản phẩm của Nvidia có băng thông cao, thể hiện sự đa dạng trong các dòng sản phẩm của hãng, từ trung bình đến cao.
+
+Tóm lại, mỗi nhà sản xuất có đặc điểm băng thông bộ nhớ khác nhau: ATI nổi bật với băng thông cao và ổn định; Intel thiên về băng thông thấp và đồng nhất; còn AMD và Nvidia có băng thông đa dạng, phù hợp với nhiều phân khúc từ trung bình đến cao.
+
+# III. THÔNG KÊ SUY DIỄN 
+1. Bài toán 1 mẫu :
+* Tìm khoảng ước lượng cho tỷ lệ | (trung bình) tổng thể:\
+   
+Đề bài: Xây dựng khoảng tin cậy 95% (hai phía) cho Tốc độ băng thông bộ nhớ trung bình (biến Memory_Bandwidth) dựa trên bộ dữ liệu hiện có.
+
+Bước 1: Kiểm tra điều kiện phân phối chuẩn của biến Memory_Bandwidth.\
+
+Cách 1: Sử dụng đồ thị để kiểm tra:\
+Để xác định liệu biến Memory_Bandwidth có phân phối chuẩn hay không, ta sử dụng hai công cụ đồ thị: Histogram và Q-Q Plot
+```{r}
+hist(main_GPU_data$Memory_Bandwidth)
+```
+
+* Biểu đồ Histogram: Biểu đồ histogram cho thấy dữ liệu của biến Memory_Bandwidth có hình dáng gần với phân phối chuẩn, với phần lớn giá trị tập trung ở giữa biểu đồ. Tuy nhiên, biểu đồ này không hoàn toàn đối xứng, có xu hướng hơi lệch về phía các giá trị cao. Điều này cho thấy rằng phân phối của dữ liệu có phần tương tự phân phối chuẩn nhưng không hoàn toàn đạt yêu cầu về chuẩn.
+
+```{r}
+qqnorm(main_GPU_data$Memory_Bandwidth)
+qqline(main_GPU_data$Memory_Bandwidth)
+```
+
+* Biểu đồ Q-Q Plot: Khi quan sát biểu đồ Q-Q Plot, ta thấy rằng hầu hết các điểm dữ liệu nằm khá gần đường chéo, cho thấy xu hướng gần chuẩn của biến. Tuy nhiên, ở hai phần đuôi (các giá trị nhỏ nhất và lớn nhất), có một số điểm lệch khỏi đường chuẩn, cho thấy sự bất đồng nhất với phân phối chuẩn ở phần đuôi.
+
+Dựa trên cả hai đồ thị, có thể kết luận rằng biến Memory_Bandwidth không tuân theo phân phối chuẩn. Mặc dù phần lớn giá trị của biến này có xu hướng gần chuẩn, nhưng sự lệch nhẹ và các ngoại lệ ở phần đuôi cho thấy phân phối không hoàn toàn phù hợp với phân phối chuẩn.
+
+Lựa chọn phương pháp: Do dữ liệu không hoàn toàn tuân theo phân phối chuẩn, và cỡ mẫu lớn (n ≥ 30), do dó bài toán thuộc loại ước lượng trung bình với phân phối tùy ý.
+
+Cách 2: Kiểm tra phân phối chuẩn của biến Memory_Bandwidth bằng phương pháp kiểm định giả thuyết.
+
+Để xác định liệu Memory_Bandwidth có phân phối chuẩn hay không, ta thực hiện kiểm định với các giả thuyết sau:
+
+* Giả thuyết H0: Biến Memory_Bandwidth có phân phối chuẩn.\
+* Giả thuyết H1: Biến Memory_Bandwidth không có phân phối chuẩn.
+
+Sử dụng hàm (shapiro.test) để tính giá trị p-value. Dựa trên giá trị này, ta có thể đưa ra quyết định về giả thuyết 
+H0 cần tìm.
+
+* Nếu p-value ≥ 5% (mức ý nghĩa): Chưa có đủ bằng chứng để bác bỏ giả thuyết H0. Điều này có nghĩa là dữ liệu có thể được coi là có phân phối chuẩn.
+* Nếu p-value < 5%: Bác bỏ giả thuyết H0, cho thấy dữ liệu không tuân theo phân phối chuẩn.
+
+```{r}
+shapiro.test(main_GPU_data$Memory_Bandwidth)
+```
+Với p-value rất nhỏ (nhỏ hơn mức ý nghĩa 5%), chúng ta có thể bác bỏ giả thuyết H0. Do đó, có thể kết luận rằng biến Memory_Bandwidth không tuân theo phân phối chuẩn.
+
+* Kết luận: Bài toán thuộc dạng phân phối tùy ý và có cỡ mẫu lớn (n ≥ 30).
+
+Bước 2: Tính các đặc trưng mẫu: 
+Đầu tiên, ta cần tính các đặc trưng mẫu quan trọng, bao gồm:\
+- n: kích thước mẫu (số quan sát).\
+- X_tb: giá trị trung bình mẫu của Memory_Bandwidth.\
+- s: độ lệch chuẩn mẫu.\
+- z_critical: giá trị tới hạn z cho khoảng tin cậy 95% (hai phía) tại mức ý nghĩa 5%.\
+
+```{r}
+#Tính các đặc trưng mẫu cửa biến 
+n <- length(main_GPU_data$Memory_Bandwidth) 
+X_tb <- mean(main_GPU_data$Memory_Bandwidth)
+s <- sd(main_GPU_data$Memory_Bandwidth)
+
+z_critical <- qnorm(p= .05/2, lower.tail = FALSE ) #Ngưỡng đối xứng 
+
+Esilon <-  qnorm(p= .05/2, lower.tail = FALSE ) * s/sqrt(n)
+
+Left_CI <- X_tb - Esilon
+Right_CT <- X_tb + Esilon  
+
+data.frame(n, X_tb, s, z_critical, Esilon, Left_CI, Right_CT)
+``` 
+
+* Kết luận: Với khoảng tin cậy 95%, chúng ta có thể khẳng định rằng giá trị trung bình của biến Memory_Bandwidth nằm trong khoảng từ 4.627055 đến 4.707068.
+
+
+# Xét Ngược Điều Kiện:
+ Giả sử biến Memory_Bandwidth có phân phối chuẩn nhưng ta chưa biết phương sai tổng thể.\
+Trong trường hợp này, nếu coi rằng Memory_Bandwidth tuân theo phân phối chuẩn và chúng ta không biết phương sai tổng thể, ta sẽ sử dụng phân phối t thay vì phân phối z để xây dựng khoảng tin cậy 95% cho giá trị trung bình mẫu.
+
+Các bước tính toán:
+
+- n: Số lượng quan sát (kích thước mẫu).\
+- X_tb: Giá trị trung bình mẫu của Memory_Bandwidth.\
+- s: Độ lệch chuẩn mẫu.\
+- t_A: Giá trị tới hạn từ phân phối t với mức ý nghĩa 5% và bậc tự do df=𝑛−1.\
+
+```{r}
+#Tính các đặc trưng mẫu cửa biến 
+n <- length(main_GPU_data$Memory_Bandwidth) 
+X_tb <- mean(main_GPU_data$Memory_Bandwidth)
+s <- sd(main_GPU_data$Memory_Bandwidth)
+
+t_A <- qt(p = .05/2, df=n-1, lower.tail=FALSE)  
+
+Esilon <-  qt(p = .05/2, df=n-1, lower.tail=FALSE) * s/sqrt(n)
+
+Left_CI <- X_tb - Esilon
+Right_CT <- X_tb + Esilon  
+
+data.frame(n, X_tb, s, z_critical, Esilon, Left_CI, Right_CT)
+``` 
+
+* Kết luận: Với giả định biến Memory_Bandwidth tuân theo phân phối chuẩn, khoảng tin cậy 95% cho giá trị trung bình của biến Memory_Bandwidth nằm trong khoảng từ 4.627037 đến 4.707086.
+
+   
+  \
+  \
+  \
+
+  2. Bài toán 2 mẫu ( Kiểm định 2 mẫu cho 2 tỷ lệ hoặc 2 trung bình):\
+* Kiểm định so sánh Tốc độ Xử Lý Bộ Nhớ (Memory_Speed) Trung Bình giữa các nhà sản xuất ( Manufacture).\
+
+Đề bài: Với mức ý nghĩa 5%, hãy kiểm tra xem có sự  Tốc độ Xử Lý Bộ Nhớ trung bình (Memory_Speed) của nhà sản xuất GPU "Nvidia" có cao hơn Tốc độ Xử Lý Bộ Nhớ trung bình  (Memory_Speed) của nhà sản xuất GPU "AMD" hay không.
+
+Ta chia dữ liệu biến Memory_Speed thành 2 nhóm như sau:\
+- Nhóm 1(X1): Các GPU của nhà sản xuất Nvidia.\
+- Nhóm 2(X2): Các GPU của nhà sản xuất AMD.\
+```{r}
+Group_1_Data <- subset(main_GPU_data, Manufacturer == "Nvidia")
+Group_2_Data <- subset(main_GPU_data, Manufacturer == "AMD")
+```
+
+Thiết lập giả thuyết kiểm định:\
+- Giả thuyết H0: Tốc độ xử lý bộ nhớ (Memory_Speed) trung bình của GPU do “Nvidia” sản xuất không cao hơn (tức là thấp hơn hoặc bằng) tốc độ xử lý bộ nhớ trung bình của GPU do “AMD” sản xuất.\
+- Giả thuyết H1: Tốc độ xử lý bộ nhớ (Memory_Speed) trung bình của GPU do “Nvidia” sản xuất cao hơn tốc độ xử lý bộ nhớ trung bình của GPU do “AMD” sản xuất.\
+
+Bước 1: Kiểm tra điều kiện phân phối chuẩn của biến Memory_Bandwidth theo mỗi nhóm khác nhau (Nhóm 1 và Nhóm 2):
+
+* Kiểm tra kiện phân phối chuẩn của biến Memory_Speed thuộc Nhóm 1(Nvidia).\
+-Cách 1: Để xác định liệu biến Memory_Speed thuộc Nhóm 1(Nvidia) có phân phối chuẩn hay không, ta sử dụng công cụ đồ thị:Q-Q Plot
+```{r}
+qqnorm(Group_1_Data$Memory_Speed)
+qqline(Group_1_Data$Memory_Speed)
+```
+* Đồ thị Q-Q Plot cho thấy các giá trị Memory_Speed của nhóm "Nvidia" có sự phân tán không hoàn toàn thẳng hàng với đường chéo lý thuyết của phân phối chuẩn. Các điểm dữ liệu ở hai phần đuôi (giá trị nhỏ nhất và lớn nhất) lệch xa khỏi đường thẳng, cho thấy sự bất đối xứng. Điều này cho thấy rằng phân phối của biến Memory_Speed trong nhóm "Nvidia" có xu hướng lệch, không tuân theo quy luật của phân phối chuẩn một cách chặt chẽ.
+
+-Cách 2: Để xác định liệu biến Memory_Speed thuộc Nhóm 1(Nvidia) có phân phối chuẩn hay không, ta sử dụng phương pháp kiểm định giả thuyết.\
+
+Để xác định liệu Memory_Bandwidth có phân phối chuẩn hay không, ta thực hiện kiểm định với các giả thuyết sau:
+
+* Giả thuyết H0: Biến Memory_Bandwidth có phân phối chuẩn.\
+* Giả thuyết H1: Biến Memory_Bandwidth không có phân phối chuẩn.
+
+Sử dụng hàm (shapiro.test) để tính giá trị p-value. Dựa trên giá trị này, ta có thể đưa ra quyết định về giả thuyết 
+H0 cần tìm.
+
+* Nếu p-value ≥ 5% (mức ý nghĩa): Chưa có đủ bằng chứng để bác bỏ giả thuyết H0. Điều này có nghĩa là dữ liệu có thể được coi là có phân phối chuẩn.
+* Nếu p-value < 5%: Bác bỏ giả thuyết H0, cho thấy dữ liệu không tuân theo phân phối chuẩn.
+
+```{r}
+shapiro.test(Group_1_Data$Memory_Speed)
+```
+Kết quả của hàm kiểm định shpiro.test() cho p-value rất nhỏ (p-value < 2.2e-16), nghĩa là thấp hơn đáng kể so với ngưỡng ý nghĩa 5% (0.05).P-value nhỏ như vậy cho phép chúng ta bác bỏ giả thuyết H0, tức là giả thuyết cho rằng dữ liệu tuân theo phân phối chuẩn.
+
+==> Kết luận tổng thể: Cả đồ thị Q-Q Plot và kết quả kiểm định Shapiro.test() đều nhất quán, cho thấy dữ liệu Memory_Speed trong nhóm "Nvidia" không tuân theo phân phối chuẩn. 
+
+* Kiểm tra kiện phân phối chuẩn của biến Memory_Speed thuộc Nhóm 2(AMD).\
+
+Để xác định liệu biến Memory_Bandwidth có phân phối chuẩn hay không, ta sử dụng hai công cụ đồ thị Q-Q Plot và hàm shpiro.test().
+
+```{r}
+qqnorm(Group_2_Data$Memory_Speed)
+qqline(Group_2_Data$Memory_Speed)
+```
+
+ Đồ thị Q-Q Plot của Memory_Speed cho nhóm "AMD" cho thấy nhiều điểm dữ liệu không nằm trên đường thẳng lý thuyết của phân phối chuẩn. Đặc biệt, các giá trị ở hai đầu (đuôi) có sự lệch đáng kể, thể hiện sự bất đối xứng trong dữ liệu và cho thấy dữ liệu có thể không tuân theo phân phối chuẩn.
+
+```{r}
+shapiro.test(Group_2_Data$Memory_Speed)
+```
+
+ -Kết quả của hàm kiểm định shpiro.test() với p-value < 2.2e-16 nhỏ hơn rất nhiều so với ngưỡng ý nghĩa 5% (0.05). Điều này dẫn đến việc bác bỏ giả thuyết H0, tức là giả thuyết cho rằng Memory_Speed của nhóm "AMD" tuân theo phân phối chuẩn.\
+
+
+* Kết luận tổng quát cho cả hai nhóm (Nvidia và AMD):\
+
+Cả hai nhóm dữ liệu Memory_Speed của Nvidia và AMD đều cho thấy không tuân theo phân phối chuẩn, do dó bài toán thuộc loại bại toán kiểm định với 2 mẫu độc lập; X1, X2 có phân phối bất kỳ và cỡ mẫu lớnlớn
+
+Bước 2: Tính các đặc trưng mẫu:\
+ 
+* Từ dữ liệu, ta tính toán các đặc trưng mẫu cho mỗi nhóm như sau:\
+```{r}
+#Tính các đặc trưng mẫu cửa biến Nhóm 1 
+n1 <- length(Group_1_Data$Memory_Speed) 
+X1_tb <- mean(Group_1_Data$Memory_Speed)
+s1 <- sd(Group_1_Data$Memory_Speed)
+#Tính các đặc trưng mẫu cửa biến Nhóm 2 
+n2 <- length(Group_2_Data$Memory_Speed) 
+X2_tb <- mean(Group_2_Data$Memory_Speed)
+s2 <- sd(Group_2_Data$Memory_Speed)
+# IN khung dữ liệu 
+data.frame(n1, X1_tb, s1, n2, X2_tb, s2)
+
+```
+
+* Tính giá trị kiểm định Z thực nghiệm (Z0):
+```{r}
+z0 <- (X1_tb - X2_tb)/sqrt(s1^2/n1 + s2^2/n2)
+print(z0)
+```
+
+* Kiểm định một phía (X1 < X2):\
+
+Tìm giá trị tới hạn: Đối với kiểm định một phía và mức ý nghĩa 𝛼= 0.05, giá trị tới hạn là:
+```{r}
+qnorm(p= .05, lower.tail = FALSE ) #Z(a) với mức ý nghĩ 5% ----- qnorm(p= .01, lower.tail = FALSE ) a = 1% 
+```
+Miền bác bỏ: RR =(1.645,+∞)
+
+
+Vì Z_0 = 8.994157 nằm trong miền bác bỏ, ta đủ cơ sở để bác bỏ giả thuyết 𝐻0. Do đó, ta có thể chấp nhận giả thiết H1. Kết luận rằng,  Tốc độ Xử Lý Bộ Nhớ trung bình của Nvidia cao hơn AMD.
+
+
+
+
+
+# Xét Ngược Điều Kiện:
+Giả sử tổng thể 𝑋1 và 𝑋2 là hai mẫu độc lập và có phân phối chuẩn. Khi đó, chúng ta sẽ thực hiện kiểm định phương sai hai mẫu để so sánh sự khác biệt về phương sai giữa hai nhóm.
+
+* Đặt Giả Thuyết
+- Giả thuyết 𝐻0: Phương sai của nhóm 1 bằng phương sai của nhóm 2, tức là 𝜎1^2 = σ2^2.\
+- Giả thuyết H1: Phương sai của nhóm 1 lớn hơn phương sai của nhóm 2, tức là 𝜎1^2 > σ2^2\
+
+Lưu ý: Dấu bất đẳng thức trong giả thuyết thay đổi tùy thuộc vào các giá trị mẫu. Trong trường hợp này, vì 𝑠1 >𝑠2 , chúng ta sẽ kiểm định xem phương sai của nhóm 1 có lớn hơn phương sai của nhóm 2 hay không.
+
+Bước 1: Thực hiện kiểm định phương sai hai mẫu
+Ta sử dụng kiểm định F để so sánh phương sai của hai nhóm, với giả thuyết một phía (alternative = "greater").
+
+```{r}
+var.test(Group_1_Data$Memory_Speed, Group_2_Data$Memory_Speed, alternative = "greater")
+```
+* Kết luận
+Vì p-value = 0.03182 nhỏ hơn mức ý nghĩa 0.05, ta bác bỏ giả thuyết 𝐻0 và chấp nhận giả thuyết 𝐻1. Do đó, có đủ bằng chứng để kết luận rằng phương sai của nhóm 1 lớn hơn phương sai của nhóm 2, tức là 𝜎1^2 > σ2^2. Điều này cho thấy có sự khác biệt về độ biến thiên giữa hai nhóm (𝜎1^2 =! 𝜎2^2).
+
+Bước 2: Tính giá trị kiểm định t thực nghiệm (t_0)
+```{r}
+t_0 <- (X1_tb - X2_tb)/sqrt(s1^2/n1 + s2^2/n2)
+print(t_0)
+```
+- Bước 3: Xác định miền bác bỏ RR:
+Do phương sai giữa hai nhóm là khác nhau, ta cần tính toán bậc tự do hiệu quả 𝑉 cho kiểm định t-test tiếp theo
+```{r}
+v <- (((s1^2/n1)+(s2^2/n2))^2)/((((s1^2/n1)^2)/(n1 - 1)) + (((s2^2/n2)^2)/(n2 - 1)))
+print(v)
+```
+```{r}
+t_A <- qt(p = .05, df = v, lower.tail=FALSE)  
+print(t_A)
+```
+Miền bác bỏ: RR =(1.645,+∞).\
+
+
+Vì t_0 = 5.960795 nằm trong miền bác bỏ, ta đủ cơ sở để bác bỏ giả thuyết 𝐻0. Do đó, ta có thể chấp nhận giả thiết H1. Kết luận rằng,  Tốc độ Xử Lý Bộ Nhớ trung bình của Nvidia cao hơn AMD.
+
+\
+\
+\
+
+3. Bài toán Phân tích phương sai (Nâng cao: Anova 2 yếu tố..):
+   a. Bài toán Anova 1 yếu tố:
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   b. Bài toán Anova 2 yếu tố:
+
+
+
+
+
+
+
+
+
+
+\
+\
+\
+
+4. Bài toán Hồi quy tuyến tính đơn ( Nâng cao: HQTT bội): 
+   a.  Bài toán Hồi quy tuyến tính ĐƠN:
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   b. Bài toán Hồi quy tuyến tính BỘI: 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
